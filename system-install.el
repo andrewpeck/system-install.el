@@ -107,17 +107,17 @@
 (with-eval-after-load 'evil
   (evil-define-key 'normal system-install-run-minor-mode-map "q" #'bury-buffer))
 
-(defun system-install-run (subcmd &rest args)
+(cl-defun system-install-run (subcmd &key args noroot)
   (let* ((name (format "%s" subcmd))
          (buf (format "*%s*" name)))
 
-
     (with-editor-async-shell-command
-     (format "sudo %s %s%s%s"
-             (system-install-get-package-cmd)
-             subcmd
-             (if args " " "")
-             (string-join args " ")) buf)
+     (concat
+      (if noroot "" "sudo ")
+      (system-install-get-package-cmd) " "
+      subcmd " "
+      (when args (if (listp args) (string-join args " ") args)))
+     buf)
 
     (with-current-buffer buf
       (ansi-color-apply-on-region (point-min) (point-max))
@@ -127,37 +127,22 @@
 (defun system-install (package)
   "Install `package' via system installer"
   (interactive
-   (list
-    (completing-read
-     "Formula: "
-     (system-install-get-package-list)
-     nil
-     t)))
-  (system-install-run (system-install-get-package-install-flag) package))
+   (list (completing-read "Formula: " (system-install-get-package-list) nil t)))
+  (system-install-run (system-install-get-package-install-flag) :args package))
 
 ;;;###autoload
 (defun system-upgrade-package (package)
   "Upgrade `package' to the latest version"
   (interactive
-   (list
-    (completing-read
-     "Formula: "
-     (system-install-get-installed-package-list)
-     nil
-     t)))
-  (system-install-run (system-install-get-package-update-flag) package))
+   (list (completing-read "Formula: " (system-install-get-installed-package-list) nil t)))
+  (system-install-run (system-install-get-package-update-flag) :args package))
 
 ;;;###autoload
 (defun system-remove-package (package)
   "Remove `package' using system package manager"
   (interactive
-   (list
-    (completing-read
-     "Formula: "
-     (system-install-get-installed-package-list)
-     nil
-     t)))
-  (system-install-run (system-install-get-package-remove-flag) package))
+   (list (completing-read "Formula: " (system-install-get-installed-package-list) nil t)))
+  (system-install-run (system-install-get-package-remove-flag) :args package))
 
 ;;;###autoload
 (defun system-upgrade ()
@@ -175,13 +160,8 @@
 (defun system-package-info (package)
   "Display `info' output for `package'"
   (interactive
-   (list
-    (completing-read
-     "Formula: "
-     (system-install-get-package-list)
-     nil
-     t)))
-  (system-install-run (system-install-get-package-info-flag) package))
+   (list (completing-read "Formula: " (system-install-get-package-list) nil t)))
+  (system-install-run (system-install-get-package-info-flag) :args package :noroot t))
 
 (provide 'system-install)
 ;;; system-install.el ends here
