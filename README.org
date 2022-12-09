@@ -3,9 +3,9 @@
 This is a simple package which provides handy wrappers around pacman / apt / dnf and enables
 installation / removal / upgrade of packages using a unified, completing read interface.
 
-Package lists are cached in a json file which defaults to ~~/.emacs.d/system-package-cache.json~, but can be customized by setting the value of ~system-install-package-cache-file~.
+Package lists are cached in a json file which defaults to =~/.emacs.d/system-package-cache.json=, but can be customized by setting the value of ~system-install-package-cache-file~.
 
-The json file will be refreshed at a default interval of 7 days, which can be changed by setting ~system-install-package-cache-refresh-days~.
+The json file will be refreshed at a default interval of 7 days, which can be changed by setting =system-install-package-cache-refresh-days=.
 
 Commands:
 
