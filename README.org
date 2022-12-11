@@ -11,9 +11,9 @@ Commands:
 
 #+begin_src
 (system-install)
-(system-upgrade)
-(system-update)
-(system-package-info)
-(system-remove-package)
-(system-upgrade-package)
+(system-install-upgrade)
+(system-install-update)
+(system-install-package-info)
+(system-install-remove-package)
+(system-install-upgrade-package)
 #+end_src
