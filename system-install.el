@@ -5,7 +5,7 @@
 ;; Author: Andrew Peck <andrew.peck@cern.ch>
 ;; URL: https://github.com/andrewpeck/system-install.el
 ;; Version: 0.0.0
-;; Package-Requires: ((s))
+;; Package-Requires: ((ansi-color "3.4.2") (json "1.5") (s "1.13") (with-editor "3.2.0") (emacs "26.1"))
 ;; Keywords: tools vhdl fpga
 ;;
 ;; This file is not part of GNU Emacs.
@@ -24,12 +24,19 @@
 ;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>
 
 ;;; Commentary:
+;;
+;; This provides some simple wrappers for installing packages on a few linux systems..
+;;  not really meant for public consumption but it has been very useful for my purposes
 
 ;;; Code:
 
+(require 'json)
 (require 's)
+(require 'cl-lib)
+(require 'ansi-color)
 
-(defvar system-install-package-cache-file "~/.emacs.d/system-package-cache.json")
+(defvar system-install-package-cache-file
+  (concat user-emacs-directory "system-package-cache.json"))
 (defvar system-install-package-cache-refresh-days 7)
 
 ;; trim the 2 header lines off of the package list output, and remove duplicate lines
@@ -99,7 +106,7 @@
 (defun system-install-clean-cache ()
   "Clean system package cache"
   (interactive)
-  (with-editor-async-shell-command (system-install-get-clean-cache-cmd)))
+  (async-shell-command (system-install-get-clean-cache-cmd)))
 
 ;; generic functions
 
@@ -107,14 +114,15 @@
   ;; if we have no cache, or it is out of date generate one
   (if (or  (not (file-exists-p system-install-package-cache-file))
            (> (time-to-seconds
-               (subtract-time (current-time)
+               (time-subtract (current-time)
                               (file-attribute-modification-time
                                (file-attributes system-install-package-cache-file ))))
               (* 60 60 24 system-install-package-cache-refresh-days)))
-      (let ((package-list (s-split "\n" (shell-command-to-string (system-install-get-package-list-cmd)) t)))
-        (with-temp-file system-install-package-cache-file
-          (insert (json-encode package-list)))
-        package-list)
+      (system-install-update)
+    (let ((package-list (s-split "\n" (shell-command-to-string (system-install-get-package-list-cmd)) t)))
+      (with-temp-file system-install-package-cache-file
+        (insert (json-encode package-list)))
+      package-list)
 
     ;; if it exists and is up to date, just return the cache
     (let ((json-array-type 'list))
@@ -126,17 +134,14 @@
             (system-install-get-installed-package-list-cmd)) t))
 
 (define-minor-mode system-install-run-minor-mode
-  "Minor mode for buffers running brew commands"
+  "Minor mode for buffers running system install commands"
   :keymap '(("q" .  bury-buffer)))
-
-(with-eval-after-load 'evil
-  (evil-define-key 'normal system-install-run-minor-mode-map "q" #'bury-buffer))
 
 (cl-defun system-install-run (subcmd &key args noroot)
   (let* ((name (format "%s" subcmd))
          (buf (format "*%s*" name)))
 
-    (with-editor-async-shell-command
+    (async-shell-command
      (concat
       (if noroot "" "sudo ")
       (system-install-get-package-cmd) " "
@@ -156,33 +161,33 @@
   (system-install-run (system-install-get-package-install-flag) :args package))
 
 ;;;###autoload
-(defun system-upgrade-package (package)
+(defun system-install-upgrade-package (package)
   "Upgrade `package' to the latest version"
   (interactive
    (list (completing-read "Formula: " (system-install-get-installed-package-list) nil t)))
   (system-install-run (system-install-get-package-update-flag) :args package))
 
 ;;;###autoload
-(defun system-remove-package (package)
+(defun system-install-remove-package (package)
   "Remove `package' using system package manager"
   (interactive
    (list (completing-read "Formula: " (system-install-get-installed-package-list) nil t)))
   (system-install-run (system-install-get-package-remove-flag) :args package))
 
 ;;;###autoload
-(defun system-upgrade ()
+(defun system-install-upgrade ()
   "Upgrade all system packages"
   (interactive)
   (system-install-run (system-install-get-system-upgrade-flag)))
 
 ;;;###autoload
-(defun system-update ()
+(defun system-install-update ()
   "Update the package database"
   (interactive)
   (system-install-run (system-install-get-package-update-flag)))
 
 ;;;###autoload
-(defun system-package-info (package)
+(defun system-install-package-info (package)
   "Display `info' output for `package'"
   (interactive
    (list (completing-read "Formula: " (system-install-get-package-list) nil t)))
