@@ -118,7 +118,7 @@
                               (file-attribute-modification-time
                                (file-attributes system-install--package-cache-file ))))
               (* 60 60 24 system-install--package-cache-refresh-days)))
-      (system-install-update)
+      ;; (system-install-update)
     (let ((package-list (s-split "\n" (shell-command-to-string (system-install--get-package-list-cmd)) t)))
       (with-temp-file system-install--package-cache-file
         (insert (json-encode package-list)))
