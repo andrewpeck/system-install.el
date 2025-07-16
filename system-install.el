@@ -1,6 +1,6 @@
 ;;; system-install.el --- Wrappers for package managers-*- lexical-binding: t; -*-
 ;;
-;; Copyright (C) 2021-2022 Andrew Peck
+;; Copyright (C) 2021-2025 Andrew Peck
 
 ;; Author: Andrew Peck <andrew.peck@cern.ch>
 ;; URL: https://github.com/andrewpeck/system-install.el
@@ -96,6 +96,11 @@
     ('pacman "pacman -Q | awk '{print $2}'")
     ('apt "apt list --installed 2> /dev/null | awk -F\/ '/\[installed/ {print $1}'")))
 
+(defun system-install--get-package-description (cand)
+  (pcase system-install--exe
+    ('apt ((string-replace "\n" "" (shell-command-to-string (format "apt-cache show %s | grep Description-en | cut -c 17-" (intern cand))))))
+    (_ (error "Not implemented."))))
+
 (defun system-install--get-clean-cache-cmd ()
   (pcase system-install--exe
     ('pacman "pacman -Sc")
@@ -119,10 +124,10 @@
                                (file-attributes system-install--package-cache-file ))))
               (* 60 60 24 system-install--package-cache-refresh-days)))
       ;; (system-install-update)
-    (let ((package-list (s-split "\n" (shell-command-to-string (system-install--get-package-list-cmd)) t)))
-      (with-temp-file system-install--package-cache-file
-        (insert (json-encode package-list)))
-      package-list)
+      (let ((package-list (s-split "\n" (shell-command-to-string (system-install--get-package-list-cmd)) t)))
+        (with-temp-file system-install--package-cache-file
+          (insert (json-encode package-list)))
+        package-list)
 
     ;; if it exists and is up to date, just return the cache
     (let ((json-array-type 'list))
@@ -192,6 +197,16 @@
   (interactive
    (list (completing-read "Formula: " (system-install--get-package-list) nil t)))
   (system-install--run (system-install--get-package-info-flag) :args package :noroot t))
+
+(with-eval-after-load 'marginalia
+  (defun system-install--annotator-function (cand)
+    "Marginalia annotator for system-install."
+    (marginalia--fields
+     (system-install--get-package-description cand)))
+  (add-to-list 'marginalia-annotators '(system-install-category system-install--annotator-function none))
+  (add-to-list 'marginalia-command-categories '(system-install . system-install-category))
+  (add-to-list 'marginalia-command-categories '(system-install-remove-package . system-install-category))
+  (add-to-list 'marginalia-command-categories '(system-install-upgrade-package . system-install-category)))
 
 (provide 'system-install)
 ;;; system-install.el ends here
