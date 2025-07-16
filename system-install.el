@@ -94,7 +94,7 @@
   (pcase system-install--exe
     ('dnf (concat  "dnf -C list installed | " system-install--dnf-filter-cmd))
     ('pacman "pacman -Q | awk '{print $2}'")
-    ('apt "apt list --installed 2> /dev/null | awk -F\/ '/\[installed/ {print $1}'")))
+    ('apt "apt list --installed 2> /dev/null | awk -F/ '{print $1}'")))
 
 (defun system-install--get-package-description (cand)
   (pcase system-install--exe
