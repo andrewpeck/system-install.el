@@ -98,7 +98,7 @@
 
 (defun system-install--get-package-description (cand)
   (pcase system-install--exe
-    ('apt ((string-replace "\n" "" (shell-command-to-string (format "apt-cache show %s | grep Description-en | cut -c 17-" (intern cand))))))
+    ('apt (string-replace "\n" "" (shell-command-to-string (format "apt-cache show %s | grep Description-en | cut -c 17-" (intern cand)))))
     (_ (error "Not implemented."))))
 
 (defun system-install--get-clean-cache-cmd ()
