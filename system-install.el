@@ -183,8 +183,9 @@ Due to lookup time package descriptions are stored in a hash-map which is serial
                                (file-attributes system-install--package-description-cache-file ))))
               (* 60 60 24 system-install--cache-refresh-days)))
 
-      (with-temp-file system-install--package-description-cache-file
-        (insert (json-encode (system-install--get-package-description-hashtable)))))
+    (setq system-install--package-description-cache nil) ;; invalidate-cache
+    (with-temp-file system-install--package-description-cache-file
+      (insert (json-encode (system-install--get-package-description-hashtable)))))
 
   ;; if it exists and is up to date, just return the cache
   (unless system-install--package-description-cache
