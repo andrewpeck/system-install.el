@@ -169,7 +169,10 @@ Due to lookup time package descriptions are stored in a hash-map which is serial
                 (_ (system-install--not-implemented-error)))))
 
     (dolist (pkg pkgs)
-      (puthash (intern (car pkg)) (cadr pkg) ht)) ht))
+      (let ((name (car pkg))
+            (desc (cadr pkg)))
+        (when (and desc (not (string-empty-p name)))
+          (puthash (intern name) desc ht)))) ht))
 
 (defvar system-install--package-description-cache nil)
 
