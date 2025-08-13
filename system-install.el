@@ -220,7 +220,8 @@
   (defun system-install--annotator-function (cand)
     "Marginalia annotator for system-install."
     (marginalia--fields
-     (system-install--get-package-description cand)))
+     ((system-install--get-package-description cand))))
+
   (add-to-list 'marginalia-annotators '(system-install-category system-install--annotator-function none))
   (add-to-list 'marginalia-command-categories '(system-install . system-install-category))
   (add-to-list 'marginalia-command-categories '(system-install-remove-package . system-install-category))
