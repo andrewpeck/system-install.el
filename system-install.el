@@ -158,8 +158,14 @@ Due to lookup time package descriptions are stored in a hash-map which is serial
         (pkgs (pcase system-install--exe
                 ('zypper
                  (mapcar (lambda (x)
-                           (mapcar #'string-trim (split-string x "::::")))
-                         (split-string (shell-command-to-string "zypper se | tail -n +6 | awk -F'|' '{printf(\"%s::::%s\\n\", $2, $3)}'") "\n")))
+                           (mapcar #'string-trim (split-string x "␜")))
+                         (split-string (shell-command-to-string
+                                        "zypper se | tail -n +6 | awk -F'|' '{printf(\"%s␜%s\\n\", $2, $3)}'") "\n")))
+                ('apt
+                 (mapcar (lambda (x)
+                           (mapcar #'string-trim (split-string x "␜")))
+                         (split-string (shell-command-to-string "cat /var/lib/dpkg/available | grep 'Package:\|Description:' | awk '{$1= \"\"; print $0}' | paste -sd '␜\n'") "\n")))
+
                 (_ (system-install--not-implemented-error)))))
 
     (dolist (pkg pkgs)
