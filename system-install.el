@@ -5,7 +5,7 @@
 ;; Author: Andrew Peck <andrew.peck@cern.ch>
 ;; URL: https://github.com/andrewpeck/system-install.el
 ;; Version: 0.0.0
-;; Package-Requires: ((ansi-color "3.4.2") (json "1.5") (s "1.13") (with-editor "3.2.0") (emacs "26.1"))
+;; Package-Requires: ((ansi-color "3.4.2") (json "1.5") (s "1.13") (with-editor "3.2.0") (emacs "28.1"))
 ;; Keywords: tools vhdl fpga
 ;;
 ;; This file is not part of GNU Emacs.
@@ -37,7 +37,13 @@
 
 (defvar system-install--package-cache-file
   (concat user-emacs-directory "system-package-cache.json"))
-(defvar system-install--package-cache-refresh-days 7)
+
+(defvar system-install--package-description-cache-file
+  (concat user-emacs-directory "system-package-description-cache.json")
+  "File to store package descriptions.
+Due to lookup time package descriptions are stored in a hash-map which is serialized into JSON for quick recovery.")
+
+(defvar system-install--cache-refresh-days 7)
 
 ;; trim the 2 header lines off of the package list output, and remove duplicate lines
 (defvar system-install--dnf-filter-cmd
@@ -112,11 +118,7 @@
     (_ (system-install--not-implemented-error))))
 
 (defun system-install--get-package-description (cand)
-  (pcase system-install--exe
-    ('apt (string-replace "\n" "" (shell-command-to-string (format "apt-cache show %s | grep Description-en | cut -c 17-" (intern cand)))))
-    ;; FIXME: zypper is too damn slow; need to cache into a hash table?
-    ;; ('zypper (shell-command-to-string (string-trim (format "zypper info %s | awk 'f{print;f=0} /Description    /{f=1}'" (intern cand)))))
-    (_ "")))
+  (gethash cand (system-install--get-cached-package-descriptions)))
 
 (defun system-install--get-clean-cache-cmd ()
   (pcase system-install--exe
@@ -140,9 +142,9 @@
                (time-subtract (current-time)
                               (file-attribute-modification-time
                                (file-attributes system-install--package-cache-file ))))
-              (* 60 60 24 system-install--package-cache-refresh-days)))
+              (* 60 60 24 system-install--cache-refresh-days)))
       ;; (system-install-update)
-      (let ((package-list (s-split "\n" (shell-command-to-string (system-install--get-package-list-cmd)) t)))
+      (let ((package-list (mapcar 'string-trim (s-split "\n" (shell-command-to-string (system-install--get-package-list-cmd)) t))))
         (with-temp-file system-install--package-cache-file
           (insert (json-encode package-list)))
         package-list)
@@ -150,6 +152,43 @@
     ;; if it exists and is up to date, just return the cache
     (let ((json-array-type 'list))
       (json-read-file system-install--package-cache-file))))
+
+(defun system-install--get-package-description-hashtable ()
+  (let ((ht (make-hash-table))
+        (pkgs (pcase system-install--exe
+                ('zypper
+                 (mapcar (lambda (x)
+                           (mapcar #'string-trim (split-string x "::::")))
+                         (split-string (shell-command-to-string "zypper se | tail -n +6 | awk -F'|' '{printf(\"%s::::%s\\n\", $2, $3)}'") "\n")))
+                (_ (system-install--not-implemented-error)))))
+
+    (dolist (pkg pkgs)
+      (puthash (intern (car pkg)) (cadr pkg) ht)) ht))
+
+(defvar system-install--package-description-cache nil)
+
+(defun system-install--get-cached-package-descriptions ()
+  ;; FIXME: combine shared code with the get-package-list version
+  ;; if we have no cache, or it is out of date generate one
+  (when (or  (not (file-exists-p system-install--package-description-cache-file))
+           (> (time-to-seconds
+               (time-subtract (current-time)
+                              (file-attribute-modification-time
+                               (file-attributes system-install--package-description-cache-file ))))
+              (* 60 60 24 system-install--cache-refresh-days)))
+
+      (with-temp-file system-install--package-description-cache-file
+        (insert (json-encode (system-install--get-package-description-hashtable)))))
+
+  ;; if it exists and is up to date, just return the cache
+  (unless system-install--package-description-cache
+    (let ((json-array-type 'list)
+          (json-object-type 'hash-table))
+      (setq system-install--package-description-cache
+            (json-read-file system-install--package-description-cache-file))))
+  system-install--package-description-cache)
+
+(setq system-install--package-description-cache nil)
 
 (defun system-install--get-installed-package-list ()
   (s-split "\n"
