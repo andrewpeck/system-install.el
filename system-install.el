@@ -33,7 +33,7 @@
 (require 'json)
 (require 's)
 (require 'cl-lib)
-(require 'ansi-color)
+(require 'marginalia)
 
 (defvar system-install--package-cache-file
   (concat user-emacs-directory "system-package-cache.json"))
@@ -46,66 +46,84 @@
 (defvar system-install--exe
   (cond ((executable-find "dnf")    'dnf)
         ((executable-find "pacman") 'pacman)
-        ((executable-find "apt")    'apt)))
+        ((executable-find "apt")    'apt)
+        ((executable-find "zypper") 'zypper)))
 
 (defun system-install--get-package-cmd ()
-  (pcase system-install--exe
-    ('dnf    "dnf")
-    ('pacman "pacman")
-    ('apt    "apt")))
+  (symbol-name system-install--exe))
+
+(defun system-install--not-implemented-error ()
+  (error (format "%s not implemented in %s"
+                 (symbol-name system-install--exe)
+                 (nth 1 (backtrace-frame 3)))))
 
 (defun system-install--get-package-info-flag ()
   (pcase system-install--exe
     ('dnf    "info")
     ('pacman "-Si")
-    ('apt    "show")))
+    ('apt    "show")
+    (_ (system-install--not-implemented-error))))
 
 (defun system-install--get-package-install-flag ()
   (pcase system-install--exe
     ('dnf    "install")
     ('pacman "-S")
-    ('apt    "install")))
+    ('apt    "install")
+    ('zypper "in")
+    (_ (system-install--not-implemented-error))))
 
 (defun system-install--get-package-update-flag ()
   (pcase system-install--exe
     ('dnf    "update")
     ('pacman "-Sy")
-    ('apt    "install")))
+    ('apt    "install")
+    (_ (system-install--not-implemented-error))))
 
 (defun system-install--get-package-remove-flag ()
   (pcase system-install--exe
     ('dnf    "remove")
     ('pacman "-R")
-    ('apt    "uninstall")))
+    ('apt    "uninstall")
+    ('zypper "remove")
+    (_ (system-install--not-implemented-error))))
 
 (defun system-install--get-system-upgrade-flag ()
   (pcase system-install--exe
     ('dnf    "update")
     ('pacman "-Syu")
-    ('apt    "upgrade")))
+    ('apt    "upgrade")
+    ('zypper "dup")
+    (_ (system-install--not-implemented-error))))
 
 (defun system-install--get-package-list-cmd ()
   (pcase system-install--exe
     ('dnf    (concat  "dnf -C list available | " system-install--dnf-filter-cmd))
     ('pacman "pacman -Sl | awk '{print $2}'")
-    ('apt    "apt-cache search . | awk '{print $1}'")))
+    ('apt    "apt-cache search . | awk '{print $1}'")
+    ('zypper "zypper se | awk -F'|' '{print $2}' | tail -n +6")
+    (_ (system-install--not-implemented-error))))
 
 (defun system-install--get-installed-package-list-cmd ()
   (pcase system-install--exe
     ('dnf (concat  "dnf -C list installed | " system-install--dnf-filter-cmd))
     ('pacman "pacman -Q | awk '{print $2}'")
-    ('apt "apt list --installed 2> /dev/null | awk -F/ '{print $1}'")))
+    ('zypper "zypper se | awk -F'|' '/^i/{print $2}' | tail -n +6")
+    ('apt "apt list --installed 2> /dev/null | awk -F/ '{print $1}'")
+    (_ (system-install--not-implemented-error))))
 
 (defun system-install--get-package-description (cand)
   (pcase system-install--exe
     ('apt (string-replace "\n" "" (shell-command-to-string (format "apt-cache show %s | grep Description-en | cut -c 17-" (intern cand)))))
-    (_ (error "Not implemented."))))
+    ;; FIXME: zypper is too damn slow; need to cache into a hash table?
+    ;; ('zypper (shell-command-to-string (string-trim (format "zypper info %s | awk 'f{print;f=0} /Description    /{f=1}'" (intern cand)))))
+    (_ "")))
 
 (defun system-install--get-clean-cache-cmd ()
   (pcase system-install--exe
     ('pacman "pacman -Sc")
     ('apt "apt-get clean")
-    ('dnf "dnf clean all")))
+    ('dnf "dnf clean all")
+    (_ (system-install--not-implemented-error))))
 
 ;;;###autoload
 (defun system-install-clean-cache ()
