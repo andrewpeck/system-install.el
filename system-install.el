@@ -216,16 +216,15 @@
    (list (completing-read "Formula: " (system-install--get-package-list) nil t)))
   (system-install--run (system-install--get-package-info-flag) :args package :noroot t))
 
-(with-eval-after-load 'marginalia
-  (defun system-install--annotator-function (cand)
-    "Marginalia annotator for system-install."
-    (marginalia--fields
-     ((system-install--get-package-description cand))))
+(defun system-install--annotator-function (cand)
+  "Marginalia annotator for system-install."
+  (marginalia--fields
+   ((system-install--get-package-description cand))))
 
-  (add-to-list 'marginalia-annotators '(system-install-category system-install--annotator-function none))
-  (add-to-list 'marginalia-command-categories '(system-install . system-install-category))
-  (add-to-list 'marginalia-command-categories '(system-install-remove-package . system-install-category))
-  (add-to-list 'marginalia-command-categories '(system-install-upgrade-package . system-install-category)))
+(add-to-list 'marginalia-annotators '(system-install-category system-install--annotator-function none))
+(add-to-list 'marginalia-command-categories '(system-install . system-install-category))
+(add-to-list 'marginalia-command-categories '(system-install-remove-package . system-install-category))
+(add-to-list 'marginalia-command-categories '(system-install-upgrade-package . system-install-category))
 
 (provide 'system-install)
 ;;; system-install.el ends here
