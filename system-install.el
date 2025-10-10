@@ -135,19 +135,23 @@ Due to lookup time package descriptions are stored in a hash-map which is serial
 
 ;; generic functions
 
+(defun system-install-refresh-cache ()
+  "Refresh the cached package database."
+  (interactive)
+  (let ((package-list (mapcar 'string-trim (s-split "\n" (shell-command-to-string (system-install--get-package-list-cmd)) t))))
+    (with-temp-file system-install--package-cache-file
+      (insert (json-encode package-list)))
+    package-list))
+
 (defun system-install--get-package-list ()
   ;; if we have no cache, or it is out of date generate one
-  (if (or  (not (file-exists-p system-install--package-cache-file))
-           (> (time-to-seconds
-               (time-subtract (current-time)
-                              (file-attribute-modification-time
-                               (file-attributes system-install--package-cache-file ))))
-              (* 60 60 24 system-install--cache-refresh-days)))
-      ;; (system-install-update)
-      (let ((package-list (mapcar 'string-trim (s-split "\n" (shell-command-to-string (system-install--get-package-list-cmd)) t))))
-        (with-temp-file system-install--package-cache-file
-          (insert (json-encode package-list)))
-        package-list)
+  (if (or (not (file-exists-p system-install--package-cache-file))
+          (> (time-to-seconds
+              (time-subtract (current-time)
+                             (file-attribute-modification-time
+                              (file-attributes system-install--package-cache-file ))))
+             (* 60 60 24 system-install--cache-refresh-days)))
+      (system-install-refresh-cache)
 
     ;; if it exists and is up to date, just return the cache
     (let ((json-array-type 'list))
