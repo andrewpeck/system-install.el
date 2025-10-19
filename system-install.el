@@ -222,7 +222,7 @@ is serialized into JSON for quick recovery.")
 
 (cl-defun system-install--run (subcmd &key args noroot)
   (let* ((name (format "%s" subcmd))
-         (buf (format "*%s*" name)))
+         (buf (format "*system install %s*" name)))
 
     (async-shell-command
      (concat
