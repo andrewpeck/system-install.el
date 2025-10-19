@@ -33,6 +33,7 @@
 (require 'json)
 (require 's)
 (require 'cl-lib)
+(require 'async)
 (require 'marginalia)
 
 (defvar system-install--package-cache-file
@@ -41,7 +42,9 @@
 (defvar system-install--package-description-cache-file
   (concat user-emacs-directory "system-package-description-cache.json")
   "File to store package descriptions.
-Due to lookup time package descriptions are stored in a hash-map which is serialized into JSON for quick recovery.")
+
+Due to lookup time package descriptions are stored in a hash-map which
+is serialized into JSON for quick recovery.")
 
 (defvar system-install--cache-refresh-days 7)
 
@@ -138,10 +141,16 @@ Due to lookup time package descriptions are stored in a hash-map which is serial
 (defun system-install-refresh-cache ()
   "Refresh the cached package database."
   (interactive)
+
+  ;; refresh the package database
   (let ((package-list (mapcar 'string-trim (s-split "\n" (shell-command-to-string (system-install--get-package-list-cmd)) t))))
     (with-temp-file system-install--package-cache-file
       (insert (json-encode package-list)))
-    package-list))
+    package-list)
+
+  ;; refresh the package descriptions hashtable
+  (with-temp-file system-install--package-description-cache-file
+    (insert (json-encode (system-install--get-package-description-hashtable)))))
 
 (defun system-install--get-package-list ()
   ;; if we have no cache, or it is out of date generate one
@@ -189,10 +198,10 @@ Due to lookup time package descriptions are stored in a hash-map which is serial
                               (file-attribute-modification-time
                                (file-attributes system-install--package-description-cache-file ))))
               (* 60 60 24 system-install--cache-refresh-days)))
-
-    (setq system-install--package-description-cache nil) ;; invalidate-cache
-    (with-temp-file system-install--package-description-cache-file
-      (insert (json-encode (system-install--get-package-description-hashtable)))))
+    ;; update json file
+    (system-install-refresh-cache)
+    ;; invalidate in memory cache so it will be reloaded
+    (setq system-install--package-description-cache nil)) 
 
   ;; if it exists and is up to date, just return the cache
   (unless system-install--package-description-cache
@@ -201,8 +210,6 @@ Due to lookup time package descriptions are stored in a hash-map which is serial
       (setq system-install--package-description-cache
             (json-read-file system-install--package-description-cache-file))))
   system-install--package-description-cache)
-
-(setq system-install--package-description-cache nil)
 
 (defun system-install--get-installed-package-list ()
   (s-split "\n"
@@ -273,6 +280,35 @@ Due to lookup time package descriptions are stored in a hash-map which is serial
   "Marginalia annotator for system-install."
   (marginalia--fields
    ((system-install--get-package-description cand))))
+
+(defvar system-install-auto-refresh-interval (* 60 60 24)
+  "Period at which to auto-refresh the package database.")
+
+(defun system-install-refresh-cache-async ()
+  "Asynchronously refresh the package cache."
+  (async-start `(lambda () (progn
+                             (setq start-time (current-time))
+                             (load ,(locate-library "marginalia"))
+                             (load ,(locate-library "s"))
+                             (load ,(locate-library "system-install"))
+
+                             (setq system-install--package-cache-file ,system-install--package-cache-file)
+                             (setq system-install--package-description-cache-file ,system-install--package-description-cache-file)
+                             
+                             (require 'system-install)
+                             (system-install-refresh-cache)
+                             start-time))
+               (lambda (start-time) (message (format  "Package refresh finished in %d seconds."
+                                                      (float-time (time-subtract (current-time) start-time)))))))
+
+;;;###autoload
+(defun system-install-auto-refresh ()
+  "Setup an auto refresh timer.
+
+Defaults to once per day but the timer can be modified by modifying
+`system-install-auto-refresh-interval`."
+  (interactive)
+  (run-with-timer 0 3600 'system-install-refresh-cache-async))
 
 (add-to-list 'marginalia-annotators '(system-install-category system-install--annotator-function none))
 (add-to-list 'marginalia-command-categories '(system-install . system-install-category))
