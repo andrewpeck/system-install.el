@@ -78,7 +78,7 @@ is serialized into JSON for quick recovery.")
     ('dnf    "install")
     ('pacman "-S")
     ('apt    "install")
-    ('zypper "in")
+    ('zypper "in -y")
     (_ (system-install--not-implemented-error))))
 
 (defun system-install--get-package-update-flag ()
