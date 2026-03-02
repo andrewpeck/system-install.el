@@ -1,6 +1,6 @@
 ;;; system-install.el --- Wrappers for package managers-*- lexical-binding: t; -*-
 ;;
-;; Copyright (C) 2021-2025 Andrew Peck
+;; Copyright (C) 2021-2026 Andrew Peck
 
 ;; Author: Andrew Peck <andrew.peck@cern.ch>
 ;; URL: https://github.com/andrewpeck/system-install.el
@@ -35,6 +35,7 @@
 (require 'cl-lib)
 (require 'async)
 (require 'marginalia)
+(require 'ansi-color)
 
 (defvar system-install--package-cache-file
   (concat user-emacs-directory "system-package-cache.json"))
@@ -59,14 +60,24 @@ is serialized into JSON for quick recovery.")
         ((executable-find "zypper") 'zypper)))
 
 (defun system-install--get-package-cmd ()
+  "Return the package command as a string.
+
+Convert `system-install--exe' to its symbol name and return as a string."
   (symbol-name system-install--exe))
 
 (defun system-install--not-implemented-error ()
-  (error (format "%s not implemented in %s"
-                 (symbol-name system-install--exe)
-                 (nth 1 (backtrace-frame 3)))))
+  "Raise a //='not implemented//=' error for system-install.
+
+This function signals an error indicating that a specific feature is not
+implemented in the current context. It uses the `system-install--exe' symbol
+name and the function name from a backtrace frame to construct the error
+message."
+  (error "%s not implemented in %s"
+         (symbol-name system-install--exe)
+         (nth 1 (backtrace-frame 3))))
 
 (defun system-install--get-package-info-flag ()
+  "Return the package info flag for the current package manager."
   (pcase system-install--exe
     ('dnf    "info")
     ('pacman "-Si")
@@ -74,6 +85,7 @@ is serialized into JSON for quick recovery.")
     (_ (system-install--not-implemented-error))))
 
 (defun system-install--get-package-install-flag ()
+  "Return the package install flag for the current package manager."
   (pcase system-install--exe
     ('dnf    "install")
     ('pacman "-S")
@@ -82,6 +94,7 @@ is serialized into JSON for quick recovery.")
     (_ (system-install--not-implemented-error))))
 
 (defun system-install--get-package-update-flag ()
+  "Return the package update flag for the current package manager."
   (pcase system-install--exe
     ('dnf    "update")
     ('pacman "-Sy")
@@ -89,6 +102,7 @@ is serialized into JSON for quick recovery.")
     (_ (system-install--not-implemented-error))))
 
 (defun system-install--get-package-remove-flag ()
+  "Return the command flag for removing a package based on the package manager."
   (pcase system-install--exe
     ('dnf    "remove")
     ('pacman "-R")
@@ -97,6 +111,7 @@ is serialized into JSON for quick recovery.")
     (_ (system-install--not-implemented-error))))
 
 (defun system-install--get-system-upgrade-flag ()
+  "Return the system upgrade flag for the current package manager."
   (pcase system-install--exe
     ('dnf    "update")
     ('pacman "-Syu")
@@ -105,6 +120,7 @@ is serialized into JSON for quick recovery.")
     (_ (system-install--not-implemented-error))))
 
 (defun system-install--get-package-list-cmd ()
+  "Return the shell command to list available packages for the current system."
   (pcase system-install--exe
     ('dnf    (concat  "dnf -C list available | " system-install--dnf-filter-cmd))
     ('pacman "pacman -Sl | awk '{print $2}'")
@@ -113,6 +129,7 @@ is serialized into JSON for quick recovery.")
     (_ (system-install--not-implemented-error))))
 
 (defun system-install--get-installed-package-list-cmd ()
+  "Return the command to list installed packages for the current system."
   (pcase system-install--exe
     ('dnf (concat  "dnf -C list installed | " system-install--dnf-filter-cmd))
     ('pacman "pacman -Q | awk '{print $2}'")
@@ -121,9 +138,11 @@ is serialized into JSON for quick recovery.")
     (_ (system-install--not-implemented-error))))
 
 (defun system-install--get-package-description (cand)
+  "Return package description for CAND."
   (gethash cand (system-install--get-cached-package-descriptions)))
 
 (defun system-install--get-clean-cache-cmd ()
+  "Return command to clean package manager cache for current system."
   (pcase system-install--exe
     ('pacman "pacman -Sc")
     ('apt "apt-get clean")
@@ -132,7 +151,7 @@ is serialized into JSON for quick recovery.")
 
 ;;;###autoload
 (defun system-install-clean-cache ()
-  "Clean system package cache"
+  "Clean system package cache."
   (interactive)
   (async-shell-command (system-install--get-clean-cache-cmd)))
 
@@ -153,6 +172,7 @@ is serialized into JSON for quick recovery.")
     (insert (json-encode (system-install--get-package-description-hashtable)))))
 
 (defun system-install--get-package-list ()
+  "Return a list of available packages, refreshing cache if necessary."
   ;; if we have no cache, or it is out of date generate one
   (if (or (not (file-exists-p system-install--package-cache-file))
           (> (time-to-seconds
@@ -167,6 +187,7 @@ is serialized into JSON for quick recovery.")
       (json-read-file system-install--package-cache-file))))
 
 (defun system-install--get-package-description-hashtable ()
+  "Return a hashtable of package descriptions."
   (let ((ht (make-hash-table))
         (pkgs (pcase system-install--exe
                 ('zypper
@@ -190,18 +211,26 @@ is serialized into JSON for quick recovery.")
 (defvar system-install--package-description-cache nil)
 
 (defun system-install--get-cached-package-descriptions ()
+  "Return cached package descriptions.
+
+Cache is returned from `system-install--package-description-cache-file'.
+
+If the cache does not exist or is outdated, refresh it by calling
+`system-install-refresh-cache'. Invalidate the in-memory cache to ensure
+it is reloaded. Parse the JSON file and return the cache contents as a
+hash table."
   ;; FIXME: combine shared code with the get-package-list version
   ;; if we have no cache, or it is out of date generate one
   (when (or  (not (file-exists-p system-install--package-description-cache-file))
-           (> (time-to-seconds
-               (time-subtract (current-time)
-                              (file-attribute-modification-time
-                               (file-attributes system-install--package-description-cache-file ))))
-              (* 60 60 24 system-install--cache-refresh-days)))
+             (> (time-to-seconds
+                 (time-subtract (current-time)
+                                (file-attribute-modification-time
+                                 (file-attributes system-install--package-description-cache-file ))))
+                (* 60 60 24 system-install--cache-refresh-days)))
     ;; update json file
     (system-install-refresh-cache)
     ;; invalidate in memory cache so it will be reloaded
-    (setq system-install--package-description-cache nil)) 
+    (setq system-install--package-description-cache nil))
 
   ;; if it exists and is up to date, just return the cache
   (unless system-install--package-description-cache
@@ -212,15 +241,21 @@ is serialized into JSON for quick recovery.")
   system-install--package-description-cache)
 
 (defun system-install--get-installed-package-list ()
+  "Return a list of installed packages by executing the relevant shell command."
   (s-split "\n"
            (shell-command-to-string
             (system-install--get-installed-package-list-cmd)) t))
 
 (define-minor-mode system-install--run-minor-mode
-  "Minor mode for buffers running system install commands"
+  "Minor mode for buffers running system install commands."
   :keymap '(("q" .  bury-buffer)))
 
 (cl-defun system-install--run (subcmd &key args noroot)
+  "Execute a system installation subcommand asynchronously.
+
+Execute the given SUBCMD with optional ARGS.
+
+If NOROOT is non-nil, do not use \\='sudo\\='."
   (let* ((name (format "%s" subcmd))
          (buf (format "*system install %s*" name)))
 
@@ -238,46 +273,46 @@ is serialized into JSON for quick recovery.")
 
 ;;;###autoload
 (defun system-install (package)
-  "Install `package' via system installer"
+  "Install PACKAGE via system installer."
   (interactive
    (list (completing-read "Formula: " (system-install--get-package-list) nil t)))
   (system-install--run (system-install--get-package-install-flag) :args package))
 
 ;;;###autoload
 (defun system-install-upgrade-package (package)
-  "Upgrade `package' to the latest version"
+  "Upgrade PACKAGE to the latest version."
   (interactive
    (list (completing-read "Formula: " (system-install--get-installed-package-list) nil t)))
   (system-install--run (system-install--get-package-update-flag) :args package))
 
 ;;;###autoload
 (defun system-install-remove-package (package)
-  "Remove `package' using system package manager"
+  "Remove PACKAGE using system package manager."
   (interactive
    (list (completing-read "Formula: " (system-install--get-installed-package-list) nil t)))
   (system-install--run (system-install--get-package-remove-flag) :args package))
 
 ;;;###autoload
 (defun system-install-upgrade ()
-  "Upgrade all system packages"
+  "Upgrade all system packages."
   (interactive)
   (system-install--run (system-install--get-system-upgrade-flag)))
 
 ;;;###autoload
 (defun system-install-update ()
-  "Update the package database"
+  "Update the package database."
   (interactive)
   (system-install--run (system-install--get-package-update-flag)))
 
 ;;;###autoload
 (defun system-install-package-info (package)
-  "Display `info' output for `package'"
+  "Display \\='info\\=' output for PACKAGE."
   (interactive
    (list (completing-read "Formula: " (system-install--get-package-list) nil t)))
   (system-install--run (system-install--get-package-info-flag) :args package :noroot t))
 
 (defun system-install--annotator-function (cand)
-  "Marginalia annotator for system-install."
+  "Marginalia annotator CAND."
   (marginalia--fields
    ((system-install--get-package-description cand))))
 
@@ -286,18 +321,18 @@ is serialized into JSON for quick recovery.")
 
 (defun system-install-refresh-cache-async ()
   "Asynchronously refresh the package cache."
-  (async-start `(lambda () (progn
-                             (setq start-time (current-time))
-                             (load ,(locate-library "marginalia"))
-                             (load ,(locate-library "s"))
-                             (load ,(locate-library "system-install"))
+  (async-start `(lambda ()
+                  (setq start-time (current-time))
+                  (load ,(locate-library "marginalia"))
+                  (load ,(locate-library "s"))
+                  (load ,(locate-library "system-install"))
 
-                             (setq system-install--package-cache-file ,system-install--package-cache-file)
-                             (setq system-install--package-description-cache-file ,system-install--package-description-cache-file)
-                             
-                             (require 'system-install)
-                             (system-install-refresh-cache)
-                             start-time))
+                  (setq system-install--package-cache-file ,system-install--package-cache-file)
+                  (setq system-install--package-description-cache-file ,system-install--package-description-cache-file)
+
+                  (require 'system-install)
+                  (system-install-refresh-cache)
+                  start-time)
                (lambda (start-time) (message (format  "Package refresh finished in %d seconds."
                                                       (float-time (time-subtract (current-time) start-time)))))))
 
@@ -306,7 +341,7 @@ is serialized into JSON for quick recovery.")
   "Setup an auto refresh timer.
 
 Defaults to once per day but the timer can be modified by modifying
-`system-install-auto-refresh-interval`."
+`system-install-auto-refresh-interval'."
   (interactive)
   (run-with-timer 0 3600 'system-install-refresh-cache-async))
 
