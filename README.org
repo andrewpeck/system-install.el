@@ -24,7 +24,13 @@ Commands:
 
 Commands that need root are run through ~sudo~ (see ~system-install-sudo-command~) in a
 [[info:emacs#Interactive Shell][comint]] buffer, so ordinary prompts such as =Proceed with installation? [Y/n]= can be
-answered in place. Press =q= to bury the buffer once the command has exited.
+answered in place.
+
+The buffer kills itself once the command exits, restoring whatever its window was showing
+beforehand. Set ~system-install-kill-buffer-when-finished~ to ~on-success~ to hold on to
+the buffer of a command that failed, or to ~nil~ to always keep it; press =q= to bury a
+buffer that is kept. ~system-install-package-info~ is exempt, since its output is the
+point of the command.
 
 Password prompts are read through ~read-passwd~ in the minibuffer and are never echoed
 into the buffer. Detection matches against a rolling tail of recent output rather than a
