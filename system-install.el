@@ -145,19 +145,14 @@ message."
   "Return package description for CAND."
   (gethash cand (system-install--get-cached-package-descriptions)))
 
-(defun system-install--get-clean-cache-cmd ()
-  "Return command to clean package manager cache for current system."
+(defun system-install--get-clean-cache-flag ()
+  "Return the cache cleaning flag for the current package manager."
   (pcase system-install--exe
-    ('pacman "pacman -Sc")
-    ('apt "apt-get clean")
-    ('dnf "dnf clean all")
+    ('pacman "-Sc")
+    ('apt    "clean")
+    ('dnf    "clean all")
+    ('zypper "clean")
     (_ (system-install--not-implemented-error))))
-
-;;;###autoload
-(defun system-install-clean-cache ()
-  "Clean system package cache."
-  (interactive)
-  (async-shell-command (system-install--get-clean-cache-cmd)))
 
 ;; generic functions
 
