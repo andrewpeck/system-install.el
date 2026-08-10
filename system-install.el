@@ -5,7 +5,7 @@
 ;; Author: Andrew Peck <andrew.peck@cern.ch>
 ;; URL: https://github.com/andrewpeck/system-install.el
 ;; Version: 0.0.0
-;; Package-Requires: ((ansi-color "3.4.2") (json "1.5") (s "1.13") (with-editor "3.2.0") (emacs "28.1"))
+;; Package-Requires: ((s "1.13") (async "1.9.8") (marginalia "1.0") (emacs "28.1"))
 ;; Keywords: tools vhdl fpga
 ;;
 ;; This file is not part of GNU Emacs.
@@ -36,6 +36,8 @@
 (require 'async)
 (require 'marginalia)
 (require 'ansi-color)
+(require 'comint)
+(require 'shell)
 
 (defvar system-install--package-cache-file
   (concat user-emacs-directory "system-package-cache.json"))
