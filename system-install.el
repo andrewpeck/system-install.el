@@ -71,7 +71,7 @@ Convert `system-install--exe' to its symbol name and return as a string."
   "Raise a //='not implemented//=' error for system-install.
 
 This function signals an error indicating that a specific feature is not
-implemented in the current context. It uses the `system-install--exe' symbol
+implemented in the current context.  It uses the `system-install--exe' symbol
 name and the function name from a backtrace frame to construct the error
 message."
   (error "%s not implemented in %s"
@@ -215,8 +215,8 @@ message."
 Cache is returned from `system-install--package-description-cache-file'.
 
 If the cache does not exist or is outdated, refresh it by calling
-`system-install-refresh-cache'. Invalidate the in-memory cache to ensure
-it is reloaded. Parse the JSON file and return the cache contents as a
+`system-install-refresh-cache'.  Invalidate the in-memory cache to ensure
+it is reloaded.  Parse the JSON file and return the cache contents as a
 hash table."
   ;; FIXME: combine shared code with the get-package-list version
   ;; if we have no cache, or it is out of date generate one
@@ -246,29 +246,158 @@ hash table."
             (system-install--get-installed-package-list-cmd)) t))
 
 (define-minor-mode system-install--run-minor-mode
-  "Minor mode for buffers running system install commands."
+  "Minor mode for buffers running system install commands.
+
+Only enabled once the command has exited.  While the command is still
+running the buffer has to accept ordinary self-inserting input, so that
+prompts such as \\='Proceed with installation? [Y/n]\\=' can be answered."
   :keymap '(("q" .  bury-buffer)))
+
+(defvar system-install-sudo-command "sudo"
+  "Command used to gain root privileges.")
+
+(defvar system-install-sudo-prompt "[sudo] password for %u: "
+  "Password prompt requested from `system-install-sudo-command'.
+
+Passed via the SUDO_PROMPT environment variable.  Pinning the prompt to
+a fixed English string keeps password detection from depending on the
+locale or on which sudo implementation happens to be installed.")
+
+(defvar system-install-password-tail-length 512
+  "How many characters of recent output are searched for a password prompt.")
+
+(defvar-local system-install--output-tail ""
+  "Rolling tail of recent output in a system install buffer.
+
+`comint-watch-for-password-prompt' inspects a single chunk of process
+output at a time, and `comint-password-prompt-regexp' is anchored to the
+end of that chunk.  A prompt delivered in more than one chunk therefore
+goes unnoticed, and the password gets typed into the buffer in the clear.
+Matching against this tail instead makes detection independent of how the
+output happens to be split up.")
+
+(defvar-local system-install--password-pending nil
+  "Non-nil while a password is being read for this buffer.
+
+Only one read may be in flight at a time.  A second one would be asked
+for from inside the first one's minibuffer, which either signals an error
+or sends the password at the point the process is no longer reading it.")
+
+(defun system-install--watch-for-password (string)
+  "Answer a password prompt found in STRING without echoing it.
+
+A replacement for `comint-watch-for-password-prompt' that matches against
+`system-install--output-tail' rather than STRING alone."
+  (setq system-install--output-tail
+        (string-limit (concat system-install--output-tail
+                              (string-replace "\r" "" string))
+                      system-install-password-tail-length t))
+  (when (and (not system-install--password-pending)
+             (let ((case-fold-search t))
+               (string-match comint-password-prompt-regexp
+                             system-install--output-tail)))
+    (let ((prompt (concat (string-trim (match-string 0 system-install--output-tail))
+                          " ")))
+      ;; Consume the tail so that a re-prompt (\"Sorry, try again.\") is seen
+      ;; as a new prompt rather than as a repeat of this one.
+      (setq system-install--output-tail "")
+      (setq system-install--password-pending t)
+      ;; Read in a timer rather than inline, so the process filter is not
+      ;; paused on the minibuffer.
+      (run-at-time
+       0 nil
+       (lambda (buf prompt)
+         (when (buffer-live-p buf)
+           (with-current-buffer buf
+             (unwind-protect
+                 (when (process-live-p (get-buffer-process buf))
+                   (comint-send-invisible prompt))
+               ;; Cleared unconditionally, so that a retry after a rejected
+               ;; password is still answered from the minibuffer.
+               (setq system-install--password-pending nil)))))
+       (current-buffer) prompt))))
+
+(defun system-install--sentinel (proc event)
+  "Report EVENT for PROC and make its buffer dismissable with \\=`q\\='."
+  (let ((buf (process-buffer proc)))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        (setq mode-line-process nil)
+        (save-excursion
+          (goto-char (point-max))
+          (let ((inhibit-read-only t))
+            (insert (format "\n%s: %s\n" (process-name proc) (string-trim event)))))
+        (system-install--run-minor-mode 1)))))
+
+(defun system-install--run-buffer (name)
+  "Return an empty buffer in which to run NAME.
+
+Reuses the conventional buffer name unless a command is still running
+there, in which case a fresh buffer is used instead."
+  (let* ((bufname (format "*system install %s*" name))
+         (buf (get-buffer bufname)))
+    (if (and buf (process-live-p (get-buffer-process buf)))
+        (generate-new-buffer bufname)
+      (with-current-buffer (get-buffer-create bufname)
+        (let ((inhibit-read-only t))
+          (erase-buffer))
+        (current-buffer)))))
 
 (cl-defun system-install--run (subcmd &key args noroot)
   "Execute a system installation subcommand asynchronously.
 
 Execute the given SUBCMD with optional ARGS.
 
-If NOROOT is non-nil, do not use \\='sudo\\='."
-  (let* ((name (format "%s" subcmd))
-         (buf (format "*system install %s*" name)))
-
-    (async-shell-command
-     (concat
-      (if noroot "" "sudo ")
-      (system-install--get-package-cmd) " "
-      subcmd " "
-      (when args (if (listp args) (string-join args " ") args)))
-     buf)
+If NOROOT is non-nil, do not use `system-install-sudo-command'."
+  (let* ((command
+          (string-join
+           (flatten-list
+            (list (unless noroot system-install-sudo-command)
+                  (system-install--get-package-cmd)
+                  ;; SUBCMD is a literal flag string, ARGS are package names
+                  ;; that came from the outside and need quoting.
+                  (split-string subcmd)
+                  (cond ((null args) nil)
+                        ((listp args) (mapcar #'shell-quote-argument args))
+                        (t (shell-quote-argument args)))))
+           " "))
+         (buf (system-install--run-buffer (car (split-string subcmd)))))
 
     (with-current-buffer buf
-      (ansi-color-apply-on-region (point-min) (point-max))
-      (system-install--run-minor-mode))))
+      ;; `shell-command-mode' derives from `comint-mode', which gives us ANSI
+      ;; colours, carriage-motion handling and interactive input.
+      (shell-command-mode)
+      (setq default-directory (expand-file-name "~/"))
+      (setq system-install--output-tail "")
+      (setq system-install--password-pending nil)
+      ;; Detect password prompts ourselves; the stock watcher would otherwise
+      ;; double-prompt on the chunks it does manage to match.  Built from the
+      ;; global value rather than the current one: this variable is
+      ;; `permanent-local', so it survives both `erase-buffer' and the
+      ;; major mode call above when this buffer gets reused for a later
+      ;; command, and consing onto it would install a second copy of the
+      ;; watcher on every run.
+      (setq-local comint-output-filter-functions
+                  (cons #'system-install--watch-for-password
+                        (remq #'comint-watch-for-password-prompt
+                              (default-value 'comint-output-filter-functions))))
+      (setq mode-line-process '(":%s"))
+      (let* ((process-environment
+              (append (list (concat "SUDO_PROMPT=" system-install-sudo-prompt))
+                      (comint-term-environment)
+                      process-environment))
+             (proc (start-process-shell-command "system-install" buf command)))
+        (set-process-filter proc #'comint-output-filter)
+        (set-process-sentinel proc #'system-install--sentinel)))
+
+    (display-buffer buf)
+    buf))
+
+;;;###autoload
+(defun system-install-clean-cache ()
+  "Clean system package cache."
+  (interactive)
+  (system-install--run (system-install--get-clean-cache-flag)))
 
 ;;;###autoload
 (defun system-install (package)
