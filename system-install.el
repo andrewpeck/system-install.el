@@ -2,7 +2,7 @@
 ;;
 ;; Copyright (C) 2021-2026 Andrew Peck
 
-;; Author: Andrew Peck <andrew.peck@cern.ch>
+;; Author: Andrew Peck <me@andrewpeck.xyz>
 ;; URL: https://github.com/andrewpeck/system-install.el
 ;; Version: 0.0.0
 ;; Package-Requires: ((s "1.13") (async "1.9.8") (marginalia "1.0") (emacs "28.1"))
