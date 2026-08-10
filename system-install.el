@@ -84,6 +84,7 @@ message."
     ('dnf    "info")
     ('pacman "-Si")
     ('apt    "show")
+    ('zypper "info")
     (_ (system-install--not-implemented-error))))
 
 (defun system-install--get-package-install-flag ()
@@ -101,6 +102,7 @@ message."
     ('dnf    "update")
     ('pacman "-Sy")
     ('apt    "install")
+    ('zypper "update")
     (_ (system-install--not-implemented-error))))
 
 (defun system-install--get-package-remove-flag ()
@@ -108,7 +110,7 @@ message."
   (pcase system-install--exe
     ('dnf    "remove")
     ('pacman "-R")
-    ('apt    "uninstall")
+    ('apt    "remove")
     ('zypper "remove")
     (_ (system-install--not-implemented-error))))
 
