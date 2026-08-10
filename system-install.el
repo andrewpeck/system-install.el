@@ -317,6 +317,37 @@ A replacement for `comint-watch-for-password-prompt' that matches against
                (setq system-install--password-pending nil)))))
        (current-buffer) prompt))))
 
+(defvar system-install-kill-buffer-when-finished t
+  "Whether a command's buffer is killed once the command has finished.
+
+A non-nil value kills the buffer as soon as the command exits, restoring
+whatever its window was showing beforehand.  Set this to the symbol
+`on-success' to hold on to the buffer of a command that exited non-zero,
+so that the error stays readable, or to nil to always keep it.  Commands
+whose whole purpose is their output, such as
+`system-install-package-info', are never killed.")
+
+(defvar-local system-install--keep-buffer nil
+  "Non-nil if this buffer should outlive the command running in it.")
+
+(defun system-install--kill-buffer-p (proc)
+  "Return non-nil if the buffer of PROC should be killed now that it exited."
+  (and system-install-kill-buffer-when-finished
+       (not (buffer-local-value 'system-install--keep-buffer (process-buffer proc)))
+       (or (not (eq system-install-kill-buffer-when-finished 'on-success))
+           (and (eq (process-status proc) 'exit)
+                (eq (process-exit-status proc) 0)))))
+
+(defun system-install--quit-buffer (buf)
+  "Kill BUF, quitting any window that displays it."
+  (dolist (win (get-buffer-window-list buf nil t))
+    ;; The first `quit-restore-window' kills BUF, so re-check each window
+    ;; rather than quitting one that has since moved on to another buffer.
+    (when (and (window-live-p win) (eq (window-buffer win) buf))
+      (quit-restore-window win 'kill)))
+  (when (buffer-live-p buf)
+    (kill-buffer buf)))
+
 (defun system-install--sentinel (proc event)
   "Report EVENT for PROC and make its buffer dismissable with \\=`q\\='."
   (let ((buf (process-buffer proc)))
@@ -327,7 +358,10 @@ A replacement for `comint-watch-for-password-prompt' that matches against
           (goto-char (point-max))
           (let ((inhibit-read-only t))
             (insert (format "\n%s: %s\n" (process-name proc) (string-trim event)))))
-        (system-install--run-minor-mode 1)))))
+        (system-install--run-minor-mode 1))
+      (when (and (memq (process-status proc) '(exit signal))
+                 (system-install--kill-buffer-p proc))
+        (system-install--quit-buffer buf)))))
 
 (defun system-install--run-buffer (name)
   "Return an empty buffer in which to run NAME.
@@ -343,12 +377,15 @@ there, in which case a fresh buffer is used instead."
           (erase-buffer))
         (current-buffer)))))
 
-(cl-defun system-install--run (subcmd &key args noroot)
+(cl-defun system-install--run (subcmd &key args noroot keep)
   "Execute a system installation subcommand asynchronously.
 
 Execute the given SUBCMD with optional ARGS.
 
-If NOROOT is non-nil, do not use `system-install-sudo-command'."
+If NOROOT is non-nil, do not use `system-install-sudo-command'.
+
+If KEEP is non-nil, the output buffer survives the command finishing,
+regardless of `system-install-kill-buffer-when-finished'."
   (let* ((command
           (string-join
            (flatten-list
@@ -370,6 +407,7 @@ If NOROOT is non-nil, do not use `system-install-sudo-command'."
       (setq default-directory (expand-file-name "~/"))
       (setq system-install--output-tail "")
       (setq system-install--password-pending nil)
+      (setq system-install--keep-buffer keep)
       ;; Detect password prompts ourselves; the stock watcher would otherwise
       ;; double-prompt on the chunks it does manage to match.  Built from the
       ;; global value rather than the current one: this variable is
@@ -437,7 +475,8 @@ If NOROOT is non-nil, do not use `system-install-sudo-command'."
   "Display \\='info\\=' output for PACKAGE."
   (interactive
    (list (completing-read "Formula: " (system-install--get-package-list) nil t)))
-  (system-install--run (system-install--get-package-info-flag) :args package :noroot t))
+  (system-install--run (system-install--get-package-info-flag)
+                       :args package :noroot t :keep t))
 
 (defun system-install--annotator-function (cand)
   "Marginalia annotator CAND."
